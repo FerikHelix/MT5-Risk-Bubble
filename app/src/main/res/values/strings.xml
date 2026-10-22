@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MT5 Risk Bubble</string>
+    <string name="accessibility_service_label">MT5 Risk Bubble</string>
+    <string name="accessibility_service_description">Reads only the MetaTrader 5 order ticket and sets its Volume field from your chosen risk percentage. It never presses Buy, Sell or Place.</string>
+</resources>
