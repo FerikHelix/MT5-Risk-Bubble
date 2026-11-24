@@ -1,5 +1,37 @@
 # Acceptance results
 
+Two runs are recorded here. The **2026-11-24** run covers the current two-page picker and the drawdown basis; the **2026-10-22** run still holds the instrument matrix for the unchanged sizing core.
+
+## Run 2026-11-24 - risk/setup picker and drawdown basis
+
+Environment: Redmi Note 11 (2207117BPG), Android 13, MIUI; MetaTrader 5 build 500.6260 on a demo USD account with a 5 776.77 balance. Build: **release 0.1.0**, signed with the debug key and installed over the debug build, so saved data survived. 289 JVM unit tests pass (`gradlew testDebugUnitTest`).
+
+The picker was rebuilt for this run: a **risk page** (field, unit, one sizing sentence, Apply, summary row), a **setup page** (base, balance, auto-apply; no Apply), and a separate **New symbol** page. The sizing core (scaling, rounding, verify loop, preconditions) is unchanged and remains covered by the 2026-10-22 run below and by the unit tests.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Risk page | Pass | Title and close, balance line, prefilled field, `[% | USD]` segmented control, `1 % of 5 776.77 USD = 57.77 USD at risk`, one-line summary, blue Apply |
+| Apply runs exactly one pass | Pass | `0.10 lots - loss 54.37 USD (0.94 % of balance)`; MT5's own SL label moved from 11.36 to 54.18 and the volume from 0.01 to 0.10 |
+| Setup page | Pass | BASE / BALANCE / AUTO-APPLY sections, segmented base with a check, Edit and Change inline, auto-apply switch, **no Apply anywhere**; Back returns to the risk page without writing |
+| Summary row | Pass | Tapping it opens Setup; after a change it reads `Balance 5 776.77 - auto-apply on`; no basis, balance or auto-apply control on the risk page |
+| Manual balance | Pass | Saved 5 776.77 and the label became `Balance 5 776.77 (manual)`; the drawdown option was disabled while no balance was known |
+| New symbol page | Pass | First use on BTCUSDm showed `New symbol`, the symbol, 0.01 / 0.1 / 1 and custom; saving 0.01 went straight to the risk page |
+| Amounts stay whole | Pass | Non-breaking thousands separator; no value split at the default font or at system font scale 1.3; the sentence and summary wrap only at word boundaries |
+| Corner scale | Pass | 20dp card, 12dp field, buttons and segmented control with flat inner corners, no pills; 16dp toast |
+| Drawdown basis | Pass | Verified the same day on the preceding build (math unchanged): start 6000 / drawdown 5000 gives floor 1 000.00 and `DD left 4 776.77`, 1 % = 47.77; the pass wrote `0.02 lots - loss 37.56 USD (0.79 % of drawdown left)`. A manual balance of 900 gave `DD left 0`, a disabled Apply and `Drawdown floor reached - no room left` |
+| Auto-apply | Pass | Verified the same day on the preceding build (code unchanged): on, an SL drag ran exactly one pass; off, dragging did nothing until Apply |
+| Largest system font | Pass | Font scale 1.3: the card fits without scrolling, Apply stays reachable, and no amount breaks across lines |
+
+Two layout defects were found by looking at the rendered screen and fixed before the release: the auto-apply label ran into its switch (now 8dp apart), and the no-balance summary wrapped onto a second line (now `No balance - auto-apply on`).
+
+Not covered by this run:
+
+- The picker in **landscape**: the phone rotated during the session and MT5's landscape strips did not expose the symbol consistently, so the overlay was only exercised in portrait.
+- The 45 s idle close was not re-timed on this build (the code path is unchanged).
+- Xiaomi pop-up, Autostart and battery settings, unchanged from the 2026-10-22 run.
+
+## Run 2026-10-22 - lot sizing, first build
+
 Run on 2026-10-22 on the target phone (Redmi Note 10S, Android 13, MIUI 14) against a **MetaTrader 5 demo account** (build 500.6260, USD account, balance 5 000.00). The app was the final debug build, after the throwaway probe was removed. 235 JVM unit tests also pass (`gradlew testDebugUnitTest`).
 
 ## The five acceptance criteria
