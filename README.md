@@ -54,17 +54,21 @@ When **Draw over other apps** and **Accessibility service** are both Ready, **St
 
 1. Open the MT5 order ticket on the chart so the strip with **SL / TP** shows at the bottom.
 2. Set the stop-loss.
-3. Tap the bubble, enter a risk and tap **Apply**. The field opens prefilled with the last value; the small **% / USD** switch changes the unit, the two chips under it choose what the percentage is measured against, and the switch on the last row is **auto-apply**.
+3. Tap the bubble, enter a risk and tap **Apply**. The field opens prefilled with the last value and the small **% / USD** control changes the unit. The line under it says exactly what the entry means (`1 % of 4 776.77 = 47.77 USD at risk`), and the summary row at the bottom names the base, what is left and whether auto-apply is on. Tapping that row opens **Setup**.
+
+The picker has two pages, so nothing you set once competes with the number you use every trade.
+
+**Setup** holds what a challenge changes rarely: the **base** (Balance or Drawdown, with the prop-firm numbers and their **Edit**), the **balance** override, and the **auto-apply** switch. It never has an Apply button, so a settings change cannot place a trade; **Back to risk** returns to the field.
 
 **Auto-apply.** While it is on and a risk is already saved, dragging the stop-loss re-sizes the lot after the value settles (about 0.7 s of quiet). Moving the stop-loss several times quickly still produces one pass. It pauses while the picker is open or another pass is running. Turn it off if you only want a pass when you tap **Apply**. The setting is remembered across restarts.
 
 **Fixed risk.** Switch to **USD** and type an amount (for example `60`) to risk that many units of the account currency instead of a percentage. The result message shows both the amount and what it worked out to as a percentage, so a fixed risk is never reported as a percentage you did not choose.
 
-**Prop-firm drawdown.** Tap **DD left** and enter your **starting balance** and **maximum drawdown** once; **Edit** beside the saved floor changes them. The floor is `starting balance - maximum drawdown`, and the percentage then applies to what is still above that floor, capped at the maximum drawdown so profit never raises the money at risk. At the start of a 10 000 challenge with a 500 drawdown, 1 % risks 5.00; after losing 400 it risks 1.00, because only 100 is left before the floor. The result message says `% of drawdown left`. A fixed amount above the buffer is allowed but flagged, and when the floor is reached **Apply** is disabled and any automatic pass is refused.
+**Prop-firm drawdown.** Open **Setup** and choose **Drawdown**, then enter your **starting balance** and **maximum drawdown** once; **Edit** beside the saved floor changes them. The floor is `starting balance - maximum drawdown`, and the percentage then applies to what is still above that floor, capped at the maximum drawdown so profit never raises the money at risk. At the start of a 10 000 challenge with a 500 drawdown, 1 % risks 5.00; after losing 400 it risks 1.00, because only 100 is left before the floor. The result message says `% of drawdown left`. A fixed amount above the buffer is allowed but flagged, and when the floor is reached **Apply** is disabled and any automatic pass is refused.
 
-**The first time you use a symbol** the picker asks for its **minimum lot** (0.01, 0.1, 1 or your own). Forex is usually 0.01; stocks and indices often 0.1. The lot then moves in steps of that size, and the answer is remembered per symbol (names match exactly, so `GBPJPY` and `GBPJPY.pc` each ask once). Change or delete these under **Minimum lots**. The maximum lot defaults to 100.
+**The first time you use a symbol** the picker opens a **New symbol** page asking for its **minimum lot** (0.01, 0.1, 1 or your own). Forex is usually 0.01; stocks and indices often 0.1. The lot then moves in steps of that size, and the answer is remembered per symbol (names match exactly, so `GBPJPY` and `GBPJPY.pc` each ask once). Change or delete these under **Minimum lots**. The maximum lot defaults to 100.
 
-**Balance.** MT5 shows your balance only on the **Trade** tab, so the app remembers it each time you open that tab, and the picker shows it with its age (`Balance 5 000.00 USD, seen 3 min ago`). Open the Trade tab again after your balance changes. You can also type a balance in the picker. If the remembered balance is lower than your free margin it is treated as stale or from another account, and nothing is written.
+**Balance.** MT5 shows your balance only on the **Trade** tab, so the app remembers it each time you open that tab, and the picker shows it with its age (`Balance 5 000.00 USD, seen 3 min ago`). Open the Trade tab again after your balance changes. You can also type a balance under **Setup -> Change**. If the remembered balance is lower than your free margin it is treated as stale or from another account, and nothing is written.
 
 ## Limits worth knowing
 

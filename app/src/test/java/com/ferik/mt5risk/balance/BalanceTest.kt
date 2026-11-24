@@ -246,11 +246,19 @@ class BalanceTest {
 
     @Test
     fun formatsAmountsLikeMetaTrader() {
-        assertEquals("5 000.00", BalanceDisplay.formatAmount(d("5000")))
-        assertEquals("4 506.77", BalanceDisplay.formatAmount(d("4506.77")))
-        assertEquals("1 234 567.80", BalanceDisplay.formatAmount(d("1234567.8")))
+        assertEquals("5\u00A0000.00", BalanceDisplay.formatAmount(d("5000")))
+        assertEquals("4\u00A0506.77", BalanceDisplay.formatAmount(d("4506.77")))
+        assertEquals("1\u00A0234\u00A0567.80", BalanceDisplay.formatAmount(d("1234567.8")))
         assertEquals("999.50", BalanceDisplay.formatAmount(d("999.5")))
         assertEquals("0.00", BalanceDisplay.formatAmount(d("0")))
+    }
+
+    @Test
+    fun aFormattedAmountNeverContainsABreakableSpace() {
+        val formatted = BalanceDisplay.formatAmount(d("1234567.8"))
+
+        assertFalse("a regular space lets Compose break the number", formatted.contains(' '))
+        assertTrue(formatted.contains('\u00A0'))
     }
 
     @Test
@@ -266,13 +274,13 @@ class BalanceTest {
     @Test
     fun theLabelShowsBalanceCurrencyAndAge() {
         val captured = CachedBalance(d("5000"), "USD", seenAtMillis = 0, source = BalanceSource.TRADE_TAB)
-        assertEquals("Balance 5 000.00 USD, seen 3 min ago", BalanceDisplay.format(captured, 3 * 60_000L))
+        assertEquals("Balance 5\u00A0000.00 USD, seen 3 min ago", BalanceDisplay.format(captured, 3 * 60_000L))
 
         val noCurrency = captured.copy(currency = null)
-        assertEquals("Balance 5 000.00, seen just now", BalanceDisplay.format(noCurrency, 1_000L))
+        assertEquals("Balance 5\u00A0000.00, seen just now", BalanceDisplay.format(noCurrency, 1_000L))
 
         val manual = captured.copy(source = BalanceSource.MANUAL)
-        assertEquals("Balance 5 000.00 USD (manual)", BalanceDisplay.format(manual, 9_999_999L))
+        assertEquals("Balance 5\u00A0000.00 USD (manual)", BalanceDisplay.format(manual, 9_999_999L))
         assertNotNull(manual)
     }
 }

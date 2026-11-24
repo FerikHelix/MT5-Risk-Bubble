@@ -3,6 +3,7 @@ package com.ferik.mt5risk.ui
 import com.ferik.mt5risk.core.PropFirm
 import com.ferik.mt5risk.core.RiskBasisKind
 import com.ferik.mt5risk.core.RiskSetting
+import com.ferik.mt5risk.core.SizingBase
 import com.ferik.mt5risk.core.SymbolVolumeRules
 import com.ferik.mt5risk.mt5.Fixtures
 import com.ferik.mt5risk.mt5.TicketReader
@@ -160,11 +161,63 @@ class PickerLogicTest {
     }
 
     @Test
-    fun thePreviewIsTheMoneyAtRisk() {
-        assertEquals(0, d("50").compareTo(PickerLogic.previewRisk(d("1"), null, fixedMode = false, base = d("5000"))!!))
-        assertEquals(0, d("60").compareTo(PickerLogic.previewRisk(d("1"), d("60"), fixedMode = true, base = d("5000"))!!))
-        assertNull(PickerLogic.previewRisk(null, null, fixedMode = false, base = d("5000")))
-        assertNull(PickerLogic.previewRisk(d("1"), null, fixedMode = false, base = null))
+    fun theExplanationIsThePercentageOfTheBase() {
+        val explanation = PickerLogic.explanation(
+            risk = RiskSetting.Percent(d("1")),
+            base = SizingBase(d("5000"), RiskBasisKind.BALANCE),
+            currency = "USD",
+            propFirm = null,
+        )!!
+
+        assertEquals("1 % of 5\u00A0000.00 USD = 50.00 USD at risk", explanation.line)
+        assertNull(explanation.detail)
+    }
+
+    @Test
+    fun aDrawdownExplanationAddsTheFloorLine() {
+        val explanation = PickerLogic.explanation(
+            risk = RiskSetting.Percent(d("1")),
+            base = SizingBase(d("100"), RiskBasisKind.DRAWDOWN),
+            currency = "USD",
+            propFirm = PropFirm(d("10000"), d("500")),
+        )!!
+
+        assertEquals("1 % of 100.00 USD = 1.00 USD at risk", explanation.line)
+        assertEquals("floor 9\u00A0500.00 - 100.00 of 500.00 left", explanation.detail)
+    }
+
+    @Test
+    fun aFixedAmountIsShownWithItsAchievedPercentage() {
+        val explanation = PickerLogic.explanation(
+            risk = RiskSetting.Fixed(d("50")),
+            base = SizingBase(d("4776.77"), RiskBasisKind.DRAWDOWN),
+            currency = "USD",
+            propFirm = PropFirm(d("6000"), d("5000")),
+        )!!
+
+        assertEquals("fixed 50.00 USD at risk - 1.05 % of drawdown", explanation.line)
+    }
+
+    @Test
+    fun thereIsNoExplanationWithoutARiskOrABasis() {
+        assertNull(PickerLogic.explanation(null, SizingBase(d("5000"), RiskBasisKind.BALANCE), "USD", null))
+        assertNull(PickerLogic.explanation(RiskSetting.Percent(d("1")), null, "USD", null))
+    }
+
+    @Test
+    fun theSummaryNamesTheBaseAndTheAutoApplyState() {
+        assertEquals(
+            "Balance 5\u00A0776.77 USD - auto-apply on",
+            PickerLogic.summary(SizingBase(d("5776.77"), RiskBasisKind.BALANCE), "USD", autoApply = true),
+        )
+        assertEquals(
+            "Drawdown 100.00 USD left - auto-apply off",
+            PickerLogic.summary(SizingBase(d("100"), RiskBasisKind.DRAWDOWN), "USD", autoApply = false),
+        )
+        assertEquals(
+            "No balance - auto-apply on",
+            PickerLogic.summary(null, "USD", autoApply = true),
+        )
     }
 
     // --- manual balance -----------------------------------------------------------------------

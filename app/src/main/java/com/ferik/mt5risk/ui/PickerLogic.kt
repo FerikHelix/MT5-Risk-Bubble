@@ -1,5 +1,6 @@
 package com.ferik.mt5risk.ui
 
+import com.ferik.mt5risk.balance.BalanceDisplay
 import com.ferik.mt5risk.core.PropFirm
 import com.ferik.mt5risk.core.RiskBasis
 import com.ferik.mt5risk.core.RiskBasisKind
@@ -10,6 +11,7 @@ import com.ferik.mt5risk.core.SymbolVolumeRules
 import com.ferik.mt5risk.mt5.TicketReading
 import com.ferik.mt5risk.mt5.snapshotOrNull
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /** What the risk picker shows when the bubble is tapped. */
 sealed interface PickerStep {
@@ -93,18 +95,72 @@ object PickerLogic {
     fun basePreview(balance: BigDecimal?, basis: RiskBasisKind, propFirm: PropFirm?): SizingBase? =
         balance?.let { RiskBasis.resolve(it, basis, propFirm) }
 
-    /** The money a pass would risk: the fixed amount, or the percentage of the base. */
-    fun previewRisk(
-        percent: BigDecimal?,
-        fixed: BigDecimal?,
-        fixedMode: Boolean,
-        base: BigDecimal?,
-    ): BigDecimal? =
-        if (fixedMode) {
-            fixed
-        } else {
-            base?.let { value -> percent?.let { RiskEngine.riskBudget(value, it) } }
+    /** The one sentence under the risk field, plus the drawdown detail line when that base is used. */
+    data class Explanation(val line: String, val detail: String?)
+
+    /** What the risk field currently means, in money: `1 % of 4 776.77 = 47.77 USD at risk`. */
+    fun explanation(
+        risk: RiskSetting?,
+        base: SizingBase?,
+        currency: String?,
+        propFirm: PropFirm?,
+    ): Explanation? {
+        if (risk == null || base == null) return null
+        val line = when (risk) {
+            is RiskSetting.Percent -> {
+                val budget = RiskEngine.riskBudget(base.value, risk.value)
+                "${plain(risk.value)} % of ${money(base.value, currency)} = " +
+                    "${money(budget, currency)} at risk"
+            }
+            is RiskSetting.Fixed -> {
+                val percent = if (base.value.signum() > 0) {
+                    risk.amount.multiply(HUNDRED).divide(base.value, 2, RoundingMode.HALF_EVEN)
+                } else {
+                    null
+                }
+                if (percent != null) {
+                    "fixed ${money(risk.amount, currency)} at risk - ${percent.toPlainString()} % " +
+                        "of ${baseName(base.kind)}"
+                } else {
+                    "fixed ${money(risk.amount, currency)} at risk"
+                }
+            }
         }
+        val detail = if (base.kind == RiskBasisKind.DRAWDOWN && propFirm != null) {
+            drawdownDetail(propFirm, base.value)
+        } else {
+            null
+        }
+        return Explanation(line, detail)
+    }
+
+    /** `floor 1 000.00 - 4 776.77 of 5 000.00 left`, without repeating the account currency. */
+    fun drawdownDetail(propFirm: PropFirm, buffer: BigDecimal?): String =
+        "floor ${BalanceDisplay.formatAmount(propFirm.floor)} - " +
+            "${buffer?.let(BalanceDisplay::formatAmount) ?: "-"} " +
+            "of ${BalanceDisplay.formatAmount(propFirm.maxDrawdown)} left"
+
+    /** The risk page's summary row: which base is in use, what is left, and whether auto-apply is on. */
+    fun summary(base: SizingBase?, currency: String?, autoApply: Boolean): String {
+        val baseText = when {
+            base == null -> "No balance"
+            base.kind == RiskBasisKind.BALANCE -> "Balance ${money(base.value, currency)}"
+            else -> "Drawdown ${money(base.value, currency)} left"
+        }
+        return "$baseText - auto-apply ${if (autoApply) "on" else "off"}"
+    }
+
+    private fun baseName(kind: RiskBasisKind): String = when (kind) {
+        RiskBasisKind.BALANCE -> "balance"
+        RiskBasisKind.DRAWDOWN -> "drawdown"
+    }
+
+    private fun plain(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
+
+    private fun money(value: BigDecimal, currency: String?): String {
+        val amount = BalanceDisplay.formatAmount(value)
+        return if (currency != null) "$amount $currency" else amount
+    }
 
     /** Label for the bubble, for example `1%` or `0.5%`. */
     fun label(percent: BigDecimal): String = percent.stripTrailingZeros().toPlainString() + " %"

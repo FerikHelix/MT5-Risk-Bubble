@@ -67,6 +67,7 @@ class PaletteTest {
     fun `chips and buttons`() {
         assertReadable("preset chip", Palette.TEXT, Palette.CHIP)
         assertReadable("selected chip", Palette.ON_SELECTED, Palette.SELECTED)
+        assertReadable("selected segment", Palette.ON_SELECTED_SOFT, Palette.SELECTED_SOFT)
         assertReadable("primary action", Palette.ON_PRIMARY, Palette.PRIMARY)
         assertReadable("disabled button", Palette.ON_DISABLED, Palette.DISABLED)
     }

@@ -7,8 +7,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ferik.mt5risk.pass.MessageSeverity
 
@@ -33,6 +35,10 @@ object Palette {
     const val ON_PRIMARY = 0xFFFFFF
     const val DISABLED = 0x262B36
     const val ON_DISABLED = 0x98A0AE
+
+    // Selection inside a segmented control: quieter than the action blue
+    const val SELECTED_SOFT = 0x1F3B63
+    const val ON_SELECTED_SOFT = 0xE8EEF9
 
     // Toasts
     const val SUCCESS = 0x0B5A32
@@ -59,6 +65,11 @@ object Palette {
     val bodySize = 16.sp
     val secondarySize = 14.sp
     val bubbleSize = 14.sp
+
+    // One corner scale: a card, the controls on it, and a toast
+    val cardShape = RoundedCornerShape(20.dp)
+    val controlShape = RoundedCornerShape(12.dp)
+    val toastShape = RoundedCornerShape(16.dp)
 
     fun color(rgb: Int, alpha: Float = 1f): Color = Color(
         red = ((rgb shr 16) and 0xFF) / 255f,

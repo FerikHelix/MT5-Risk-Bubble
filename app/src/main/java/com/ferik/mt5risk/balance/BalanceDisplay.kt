@@ -14,7 +14,8 @@ object BalanceDisplay {
     fun formatAmount(value: BigDecimal): String {
         val plain = value.setScale(2, RoundingMode.HALF_EVEN).abs().toPlainString()
         val integer = plain.substringBefore('.')
-        val grouped = integer.reversed().chunked(3).joinToString(" ").reversed()
+        // Non-breaking so an amount is one token: Compose may wrap text at a regular space.
+        val grouped = integer.reversed().chunked(3).joinToString("\u00A0").reversed()
         val sign = if (value.signum() < 0) "-" else ""
         return "$sign$grouped.${plain.substringAfter('.')}"
     }

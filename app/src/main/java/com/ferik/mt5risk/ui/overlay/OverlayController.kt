@@ -15,6 +15,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import com.ferik.mt5risk.AppGraph
 import com.ferik.mt5risk.balance.BalanceDisplay
+import com.ferik.mt5risk.balance.BalanceSource
+import com.ferik.mt5risk.balance.CachedBalance
+import com.ferik.mt5risk.core.PropFirm
 import com.ferik.mt5risk.core.RiskBasisKind
 import com.ferik.mt5risk.core.RiskMode
 import com.ferik.mt5risk.core.RiskSetting
@@ -193,22 +196,31 @@ class OverlayController(private val context: Context) {
 
     private suspend fun chooseRisk(symbol: String): PickerUi.ChooseRisk {
         val cached = AppGraph.balanceStore.current()
-        val label = cached?.let { BalanceDisplay.format(it, System.currentTimeMillis()) }
-            ?: "No balance yet - open the Trade tab once, or set it manually"
+        val mode = AppGraph.uiPrefs.riskModeNow()
         return PickerUi.ChooseRisk(
             symbol = symbol,
             balance = cached?.value,
             currency = AppGraph.lastCurrency ?: cached?.currency,
-            balanceLabel = label,
-            balanceIsManual = cached?.source == com.ferik.mt5risk.balance.BalanceSource.MANUAL,
-            lastUsed = AppGraph.uiPrefs.lastRiskNow(),
+            balanceLabel = labelFor(cached),
+            balanceIsManual = cached?.source == BalanceSource.MANUAL,
+            riskText = prefillFor(mode),
             autoApply = AppGraph.uiPrefs.autoApplyNow(),
-            riskMode = AppGraph.uiPrefs.riskModeNow(),
-            fixedRisk = AppGraph.uiPrefs.fixedRiskNow(),
+            riskMode = mode,
             basis = AppGraph.uiPrefs.riskBasisNow(),
             propFirm = AppGraph.uiPrefs.propFirmNow(),
         )
     }
+
+    private suspend fun prefillFor(mode: RiskMode): String = when (mode) {
+        RiskMode.PERCENT -> AppGraph.uiPrefs.lastRiskNow()
+        RiskMode.FIXED -> AppGraph.uiPrefs.fixedRiskNow()
+    }?.stripTrailingZeros()?.toPlainString() ?: ""
+
+    private fun labelFor(cached: CachedBalance?): String =
+        cached?.let { BalanceDisplay.format(it, System.currentTimeMillis()) }
+            ?: "No balance yet - open the Trade tab once, or set it manually"
+
+    private fun currentRisk(): PickerUi.ChooseRisk? = pickerState.value as? PickerUi.ChooseRisk
 
     private fun showPicker(initial: PickerUi) {
         pickerState.value = initial
@@ -225,12 +237,14 @@ class OverlayController(private val context: Context) {
                     state = state,
                     onMinLot = { min -> saveMinLot(state, min) },
                     onApply = ::runRisk,
-                    onManualBalance = { value -> scope.launch { setManualBalance(state, value) } },
-                    onClearManualBalance = { scope.launch { clearManualBalance(state) } },
-                    onAutoApply = { enabled -> scope.launch { setAutoApply(state, enabled) } },
-                    onRiskMode = { mode -> scope.launch { setRiskMode(state, mode) } },
-                    onBasis = { kind -> scope.launch { setRiskBasis(state, kind) } },
-                    onPropFirm = { start, drawdown -> scope.launch { setPropFirm(state, start, drawdown) } },
+                    onRiskText = ::setRiskText,
+                    onRiskMode = { mode -> scope.launch { setRiskMode(mode) } },
+                    onPage = ::setPage,
+                    onBasis = { kind -> scope.launch { setRiskBasis(kind) } },
+                    onPropFirm = { propFirm -> scope.launch { setPropFirm(propFirm) } },
+                    onAutoApply = { enabled -> scope.launch { setAutoApply(enabled) } },
+                    onManualBalance = { value -> scope.launch { setManualBalance(value) } },
+                    onClearManualBalance = { scope.launch { clearManualBalance() } },
                     onEdit = ::restartPickerTimeout,
                     onDismiss = ::closePicker,
                 )
@@ -282,46 +296,70 @@ class OverlayController(private val context: Context) {
         }
     }
 
-    private suspend fun setManualBalance(state: PickerUi, value: BigDecimal) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+    private suspend fun setManualBalance(value: BigDecimal) {
+        val current = currentRisk() ?: return
         AppGraph.balanceStore.setManual(value, AppGraph.lastCurrency)
-        pickerState.value = chooseRisk(symbol)
+        val cached = AppGraph.balanceStore.current()
+        pickerState.value = current.copy(
+            balance = cached?.value,
+            currency = AppGraph.lastCurrency ?: cached?.currency,
+            balanceLabel = labelFor(cached),
+            balanceIsManual = cached?.source == BalanceSource.MANUAL,
+        )
         restartPickerTimeout()
     }
 
-    private suspend fun clearManualBalance(state: PickerUi) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+    private suspend fun clearManualBalance() {
+        val current = currentRisk() ?: return
         AppGraph.balanceStore.clearManual()
-        pickerState.value = chooseRisk(symbol)
+        val cached = AppGraph.balanceStore.current()
+        pickerState.value = current.copy(
+            balance = cached?.value,
+            currency = AppGraph.lastCurrency ?: cached?.currency,
+            balanceLabel = labelFor(cached),
+            balanceIsManual = cached?.source == BalanceSource.MANUAL,
+        )
         restartPickerTimeout()
     }
 
-    private suspend fun setAutoApply(state: PickerUi, enabled: Boolean) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+    private suspend fun setAutoApply(enabled: Boolean) {
+        val current = currentRisk() ?: return
         AppGraph.uiPrefs.setAutoApply(enabled)
-        pickerState.value = chooseRisk(symbol)
+        pickerState.value = current.copy(autoApply = enabled)
         restartPickerTimeout()
     }
 
-    private suspend fun setRiskMode(state: PickerUi, mode: RiskMode) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+    private suspend fun setRiskMode(mode: RiskMode) {
+        val current = currentRisk() ?: return
         AppGraph.uiPrefs.setRiskMode(mode)
-        pickerState.value = chooseRisk(symbol)
+        pickerState.value = current.copy(riskMode = mode, riskText = prefillFor(mode))
         restartPickerTimeout()
     }
 
-    private suspend fun setRiskBasis(state: PickerUi, kind: RiskBasisKind) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+    private fun setRiskText(text: String) {
+        val current = currentRisk() ?: return
+        pickerState.value = current.copy(riskText = text)
+        restartPickerTimeout()
+    }
+
+    private fun setPage(page: PickerPage) {
+        val current = currentRisk() ?: return
+        pickerState.value = current.copy(page = page)
+        restartPickerTimeout()
+    }
+
+    private suspend fun setRiskBasis(kind: RiskBasisKind) {
+        val current = currentRisk() ?: return
         AppGraph.uiPrefs.setRiskBasis(kind)
-        pickerState.value = chooseRisk(symbol)
+        pickerState.value = current.copy(basis = kind)
         restartPickerTimeout()
     }
 
-    private suspend fun setPropFirm(state: PickerUi, start: BigDecimal, drawdown: BigDecimal) {
-        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
-        AppGraph.uiPrefs.setPropFirm(start, drawdown)
+    private suspend fun setPropFirm(propFirm: PropFirm) {
+        val current = currentRisk() ?: return
+        AppGraph.uiPrefs.setPropFirm(propFirm.startBalance, propFirm.maxDrawdown)
         AppGraph.uiPrefs.setRiskBasis(RiskBasisKind.DRAWDOWN)
-        pickerState.value = chooseRisk(symbol)
+        pickerState.value = current.copy(propFirm = propFirm, basis = RiskBasisKind.DRAWDOWN)
         restartPickerTimeout()
     }
 

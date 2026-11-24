@@ -64,7 +64,7 @@ class OutcomeMessageTest {
     @Test
     fun largeAmountsUseSpaceThousands() {
         val message = OutcomeMessage.of(success(volumeText = "12.5", loss = "1234.50", base = "123450"))
-        assertEquals("12.5 lots - loss 1 234.50 USD (1.00 % of balance)", message.text)
+        assertEquals("12.5 lots - loss 1\u00A0234.50 USD (1.00 % of balance)", message.text)
     }
 
     @Test
