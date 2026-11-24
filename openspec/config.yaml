@@ -1,4 +1,5 @@
 schema: spec-driven
+skillsScope: project
 
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.
@@ -8,6 +9,7 @@ schema: spec-driven
 #   context: |
 #     Designs and tasks must cover Windows, macOS, and Linux
 #     Write all artifacts in Spanish
+
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
