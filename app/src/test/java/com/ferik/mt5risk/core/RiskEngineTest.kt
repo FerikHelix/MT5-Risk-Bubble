@@ -20,7 +20,15 @@ class RiskEngineTest {
         volume: String,
         loss: String,
         rule: VolumeRule = forex,
-    ) = SizingRequest(d(balance), d(percent), d(volume), d(loss), rule)
+    ) = fixedRequest(balance, RiskEngine.riskBudget(d(balance), d(percent)).toPlainString(), volume, loss, rule)
+
+    private fun fixedRequest(
+        balance: String = "5000",
+        budget: String,
+        volume: String,
+        loss: String,
+        rule: VolumeRule = forex,
+    ) = SizingRequest(d(balance), d(budget), d(volume), d(loss), rule)
 
     private fun assertVolume(expected: String, result: SizingResult, rule: VolumeRule) {
         assertEquals(expected, rule.format(result.volume))
@@ -30,6 +38,21 @@ class RiskEngineTest {
     fun riskBudgetIsPercentOfBalance() {
         assertEquals(0, d("50").compareTo(RiskEngine.riskBudget(d("5000"), d("1"))))
         assertEquals(0, d("22.5338").compareTo(RiskEngine.riskBudget(d("4506.76"), d("0.5"))))
+    }
+
+    @Test
+    fun aFixedBudgetSizesTheSameWayAsAnEquivalentPercentBudget() {
+        // 60 USD on a 6000 balance is the same budget as 1 %.
+        val fixed = RiskEngine.size(fixedRequest(balance = "6000", budget = "60", volume = "0.01", loss = "1.49"))
+        val percent = RiskEngine.size(request(balance = "6000", percent = "1", volume = "0.01", loss = "1.49"))
+
+        assertEquals(0, fixed.riskBudget.compareTo(percent.riskBudget))
+        assertEquals(fixed.volume, percent.volume)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsNonPositiveFixedBudget() {
+        RiskEngine.size(fixedRequest(budget = "0", volume = "0.01", loss = "1"))
     }
 
     @Test

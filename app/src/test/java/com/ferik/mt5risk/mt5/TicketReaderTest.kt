@@ -2,6 +2,7 @@ package com.ferik.mt5risk.mt5
 
 import com.ferik.mt5risk.core.Preconditions
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskSetting
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -297,16 +298,16 @@ class TicketReaderTest {
     fun symbolFromTheCollapsedStripFeedsThePreExpandCheck() {
         val collapsed = TicketReader.read(Fixtures.load("collapsed_strip")) as TicketReading.Collapsed
         val rule = com.ferik.mt5risk.core.VolumeRule.forMinLot(d("0.01"))
-        assertNull(Preconditions.beforeExpand(d("1"), collapsed.symbol, rule))
+        assertNull(Preconditions.beforeExpand(RiskSetting.Percent(d("1")), collapsed.symbol, rule))
         assertEquals(
             Refusal.NoVolumeRule("GBPJPY"),
-            Preconditions.beforeExpand(d("1"), collapsed.symbol, null),
+            Preconditions.beforeExpand(RiskSetting.Percent(d("1")), collapsed.symbol, null),
         )
 
         val unreadable = TicketReader.read(
             Fixtures.load("collapsed_strip") { it.replace("id/symbol_name", "id/renamed_by_an_mt5_update") },
         ) as TicketReading.Collapsed
-        assertEquals(Refusal.Unreadable("symbol_name"), Preconditions.beforeExpand(d("1"), unreadable.symbol, rule))
+        assertEquals(Refusal.Unreadable("symbol_name"), Preconditions.beforeExpand(RiskSetting.Percent(d("1")), unreadable.symbol, rule))
     }
 
     // --- volume unit (task 4.2) -------------------------------------------------------------

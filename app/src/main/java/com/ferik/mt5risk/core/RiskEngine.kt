@@ -8,8 +8,8 @@ enum class VolumeClamp { RAISED_TO_MIN, CAPPED_AT_MAX }
 
 data class SizingRequest(
     val balance: BigDecimal,
-    /** Risk in percent of balance, for example 1 for 1 %. */
-    val riskPercent: BigDecimal,
+    /** Absolute money at risk in account currency, already derived from a percent or a fixed amount. */
+    val riskBudget: BigDecimal,
     /** Volume currently in the ticket, whose loss MetaTrader 5 reports. */
     val currentVolume: BigDecimal,
     /** Absolute stop-loss loss MetaTrader 5 reports for [currentVolume], in account currency. */
@@ -40,11 +40,11 @@ object RiskEngine {
 
     fun size(request: SizingRequest): SizingResult {
         require(request.balance.signum() > 0) { "balance must be positive" }
-        require(request.riskPercent.signum() > 0) { "riskPercent must be positive" }
+        require(request.riskBudget.signum() > 0) { "riskBudget must be positive" }
         require(request.currentVolume.signum() > 0) { "currentVolume must be positive" }
         require(request.slLoss.signum() > 0) { "slLoss must be a positive magnitude" }
 
-        val budget = riskBudget(request.balance, request.riskPercent)
+        val budget = request.riskBudget
         val unrounded = scaleVolume(request.currentVolume, budget, request.slLoss)
         return finish(budget, unrounded, request.rule)
     }

@@ -13,7 +13,10 @@ class PreconditionsTest {
     private val forex = VolumeRule.forMinLot(d("0.01"))
 
     private fun before(percent: String? = "1", symbol: String? = "GBPJPY", rule: VolumeRule? = forex) =
-        Preconditions.beforeExpand(percent?.let(::d), symbol, rule)
+        Preconditions.beforeExpand(percent?.let { RiskSetting.Percent(d(it)) }, symbol, rule)
+
+    private fun beforeFixed(amount: String, symbol: String? = "GBPJPY", rule: VolumeRule? = forex) =
+        Preconditions.beforeExpand(RiskSetting.Fixed(d(amount)), symbol, rule)
 
     private fun after(
         balance: String? = "5000",
@@ -44,6 +47,13 @@ class PreconditionsTest {
         assertTrue(before(percent = "-1") is Refusal.InvalidRiskPercent)
         assertTrue(before(percent = "100.01") is Refusal.InvalidRiskPercent)
         assertTrue(before(percent = null) is Refusal.InvalidRiskPercent)
+    }
+
+    @Test
+    fun aFixedRiskMustBeAboveZero() {
+        assertNull(beforeFixed("60"))
+        assertTrue(beforeFixed("0") is Refusal.InvalidFixedRisk)
+        assertTrue(beforeFixed("-5") is Refusal.InvalidFixedRisk)
     }
 
     @Test
@@ -137,6 +147,7 @@ class PreconditionsTest {
     fun everyRefusalHasAUserFacingMessage() {
         val refusals = listOf(
             Refusal.InvalidRiskPercent(d("0")),
+            Refusal.InvalidFixedRisk(d("0")),
             Refusal.NoBalance,
             Refusal.StaleBalance(d("4000"), d("5000")),
             Refusal.NoVolumeRule("SP500"),

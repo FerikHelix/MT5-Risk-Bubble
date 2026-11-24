@@ -1,6 +1,8 @@
 package com.ferik.mt5risk.pass
 
 import com.ferik.mt5risk.balance.BalanceDisplay
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.VolumeClamp
 import com.ferik.mt5risk.core.VolumeRule
 import java.math.BigDecimal
@@ -39,16 +41,27 @@ data class OutcomeMessage(
         }
 
         private fun success(outcome: PassOutcome.Success): OutcomeMessage {
-            val percent = outcome.lossPercentOfBalance.toPlainString()
+            val percent = outcome.lossPercentOfBase.toPlainString()
+            val baseLabel = when (outcome.baseKind) {
+                RiskBasisKind.BALANCE -> "balance"
+                RiskBasisKind.DRAWDOWN -> "drawdown left"
+            }
+            val riskSuffix = when (val risk = outcome.riskSetting) {
+                is RiskSetting.Percent -> ""
+                is RiskSetting.Fixed -> " - risk ${money(risk.amount, outcome.currency)}"
+            }
             val text = StringBuilder(
-                "${outcome.volumeText} lots - loss ${money(outcome.observedLoss, outcome.currency)} ($percent % of balance)",
+                "${outcome.volumeText} lots - loss ${money(outcome.observedLoss, outcome.currency)}" +
+                    "$riskSuffix ($percent % of $baseLabel)",
             )
             var severity = MessageSeverity.SUCCESS
             if (outcome.minLotExceedsRisk) {
                 severity = MessageSeverity.WARNING
-                text.append(
-                    ". Minimum lot already risks more than your ${plain(outcome.riskPercent)} %",
-                )
+                val target = when (val risk = outcome.riskSetting) {
+                    is RiskSetting.Percent -> "${plain(risk.value)} %"
+                    is RiskSetting.Fixed -> money(risk.amount, outcome.currency)
+                }
+                text.append(". Minimum lot already risks more than your $target")
             }
             if (outcome.clamp == VolumeClamp.CAPPED_AT_MAX) {
                 severity = MessageSeverity.WARNING

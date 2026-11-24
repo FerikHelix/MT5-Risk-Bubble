@@ -1,6 +1,8 @@
 package com.ferik.mt5risk.pass
 
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.VolumeClamp
 import com.ferik.mt5risk.core.VolumeRule
 import java.math.BigDecimal
@@ -18,15 +20,18 @@ class OutcomeMessageTest {
         loss: String = "49.17",
         currency: String? = "USD",
         percent: String = "1",
-        balance: String = "5000",
+        base: String = "5000",
+        baseKind: RiskBasisKind = RiskBasisKind.BALANCE,
         clamp: VolumeClamp? = null,
         minLotExceedsRisk: Boolean = false,
+        riskSetting: RiskSetting = RiskSetting.Percent(d(percent)),
     ) = PassOutcome.Success(
         symbol = "GBPJPY",
         volume = d(volumeText),
         volumeText = volumeText,
-        riskPercent = d(percent),
-        balance = d(balance),
+        riskSetting = riskSetting,
+        base = d(base),
+        baseKind = baseKind,
         observedLoss = d(loss),
         currency = currency,
         clamp = clamp,
@@ -52,14 +57,48 @@ class OutcomeMessageTest {
 
     @Test
     fun centAccountAmountsUseTheirSuffix() {
-        val message = OutcomeMessage.of(success(volumeText = "0.69", loss = "44.91", currency = "USC", balance = "4506.77"))
+        val message = OutcomeMessage.of(success(volumeText = "0.69", loss = "44.91", currency = "USC", base = "4506.77"))
         assertEquals("0.69 lots - loss 44.91 USC (1.00 % of balance)", message.text)
     }
 
     @Test
     fun largeAmountsUseSpaceThousands() {
-        val message = OutcomeMessage.of(success(volumeText = "12.5", loss = "1234.50", balance = "123450"))
+        val message = OutcomeMessage.of(success(volumeText = "12.5", loss = "1234.50", base = "123450"))
         assertEquals("12.5 lots - loss 1 234.50 USD (1.00 % of balance)", message.text)
+    }
+
+    @Test
+    fun aDrawdownBasisIsNamedInsteadOfTheBalance() {
+        val message = OutcomeMessage.of(
+            success(loss = "0.98", base = "100", baseKind = RiskBasisKind.DRAWDOWN),
+        )
+        assertEquals("0.33 lots - loss 0.98 USD (0.98 % of drawdown left)", message.text)
+    }
+
+    @Test
+    fun anExhaustedDrawdownFloorHasItsOwnReason() {
+        val message = OutcomeMessage.of(PassOutcome.Refused(Refusal.DrawdownExhausted))
+
+        assertEquals(MessageSeverity.ERROR, message.severity)
+        assertEquals("The drawdown floor has been reached - no room left to size", message.text)
+    }
+
+    @Test
+    fun aFixedRiskIsShownAsAnAmountAsWellAsItsAchievedPercent() {
+        val message = OutcomeMessage.of(
+            success(loss = "58.00", riskSetting = RiskSetting.Fixed(d("60"))),
+        )
+        assertEquals("0.33 lots - loss 58.00 USD - risk 60.00 USD (1.16 % of balance)", message.text)
+        assertEquals(MessageSeverity.SUCCESS, message.severity)
+    }
+
+    @Test
+    fun minimumLotAboveAFixedRiskNamesTheAmount() {
+        val message = OutcomeMessage.of(
+            success(loss = "100.00", minLotExceedsRisk = true, riskSetting = RiskSetting.Fixed(d("60"))),
+        )
+        assertEquals(MessageSeverity.WARNING, message.severity)
+        assertTrue(message.text, message.text.contains("Minimum lot already risks more than your 60.00 USD"))
     }
 
     @Test

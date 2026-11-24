@@ -1,6 +1,8 @@
 package com.ferik.mt5risk.pass
 
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.VolumeClamp
 import com.ferik.mt5risk.core.VolumeRule
 import java.math.BigDecimal
@@ -14,8 +16,11 @@ sealed interface PassOutcome {
         val volume: BigDecimal,
         /** [volume] written with the symbol's number of decimals, exactly as put in the ticket. */
         val volumeText: String,
-        val riskPercent: BigDecimal,
-        val balance: BigDecimal,
+        /** What the user asked to risk: a percentage of the base or a fixed amount. */
+        val riskSetting: RiskSetting,
+        /** The amount the risk percentage applied to: the balance or the drawdown buffer. */
+        val base: BigDecimal,
+        val baseKind: RiskBasisKind,
         /** MT5's absolute stop-loss loss for [volume], as last read. */
         val observedLoss: BigDecimal,
         val currency: String?,
@@ -24,8 +29,8 @@ sealed interface PassOutcome {
         val minLotExceedsRisk: Boolean,
         val writes: Int,
     ) : PassOutcome {
-        val lossPercentOfBalance: BigDecimal
-            get() = observedLoss.multiply(BigDecimal(100)).divide(balance, 2, java.math.RoundingMode.HALF_EVEN)
+        val lossPercentOfBase: BigDecimal
+            get() = observedLoss.multiply(BigDecimal(100)).divide(base, 2, java.math.RoundingMode.HALF_EVEN)
     }
 
     /** Nothing was written because a precondition failed. */

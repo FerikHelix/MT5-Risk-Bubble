@@ -1,5 +1,6 @@
 package com.ferik.mt5risk
 
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.pass.MessageSeverity
 import java.math.BigDecimal
 import kotlinx.coroutines.async
@@ -22,7 +23,7 @@ class AppGraphTest {
 
         val message = async { AppGraph.messages.first() }
         runCurrent()
-        val result = AppGraph.runPass(BigDecimal.ONE)
+        val result = AppGraph.runPass(RiskSetting.Percent(BigDecimal.ONE))
         runCurrent()
 
         assertNull("no pass can run without the service", result)

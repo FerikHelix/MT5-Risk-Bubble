@@ -16,8 +16,17 @@ sealed interface Refusal {
         override val message = "Risk must be above 0 % and at most 100 %"
     }
 
+    data class InvalidFixedRisk(val amount: BigDecimal?) : Refusal {
+        override val message = "Fixed risk must be above 0"
+    }
+
     data object NoBalance : Refusal {
         override val message = "No balance yet - open the Trade tab so it can be read"
+    }
+
+    /** The account is at or below the prop-firm drawdown floor, so there is nothing left to risk. */
+    data object DrawdownExhausted : Refusal {
+        override val message = "The drawdown floor has been reached - no room left to size"
     }
 
     data class StaleBalance(val balance: BigDecimal, val freeMargin: BigDecimal) : Refusal {
@@ -59,9 +68,13 @@ object Preconditions {
     private val HUNDRED = BigDecimal(100)
 
     /** Checks possible before the sheet is expanded. */
-    fun beforeExpand(riskPercent: BigDecimal?, symbol: String?, rule: VolumeRule?): Refusal? {
-        if (riskPercent == null || riskPercent.signum() <= 0 || riskPercent > HUNDRED) {
-            return Refusal.InvalidRiskPercent(riskPercent)
+    fun beforeExpand(risk: RiskSetting?, symbol: String?, rule: VolumeRule?): Refusal? {
+        when (risk) {
+            null -> return Refusal.InvalidRiskPercent(null)
+            is RiskSetting.Percent ->
+                if (risk.value.signum() <= 0 || risk.value > HUNDRED) return Refusal.InvalidRiskPercent(risk.value)
+            is RiskSetting.Fixed ->
+                if (risk.amount.signum() <= 0) return Refusal.InvalidFixedRisk(risk.amount)
         }
         if (symbol.isNullOrBlank()) return Refusal.Unreadable("symbol_name")
         if (rule == null) return Refusal.NoVolumeRule(symbol)

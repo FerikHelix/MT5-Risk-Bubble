@@ -1,5 +1,11 @@
 package com.ferik.mt5risk.ui
 
+import com.ferik.mt5risk.core.PropFirm
+import com.ferik.mt5risk.core.RiskBasis
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskEngine
+import com.ferik.mt5risk.core.RiskSetting
+import com.ferik.mt5risk.core.SizingBase
 import com.ferik.mt5risk.core.SymbolVolumeRules
 import com.ferik.mt5risk.mt5.TicketReading
 import com.ferik.mt5risk.mt5.snapshotOrNull
@@ -19,10 +25,9 @@ sealed interface PickerStep {
 
 object PickerLogic {
 
-    /** The percentages offered as one-tap buttons. */
-    val RISK_PRESETS: List<BigDecimal> = listOf(BigDecimal("0.5"), BigDecimal("1"), BigDecimal("2"))
-
     private val HUNDRED = BigDecimal(100)
+    private val MAX_FIXED_RISK = BigDecimal("1000000")
+    private val MAX_PROP_FIRM_AMOUNT = BigDecimal("1000000000")
 
     /**
      * Decide the first thing the picker shows. [reading] is null when the accessibility service is
@@ -40,23 +45,67 @@ object PickerLogic {
         return if (rules.isKnown(symbol)) PickerStep.ChooseRisk(symbol) else PickerStep.AskMinLot(symbol)
     }
 
-    /** A custom risk percentage: a number above 0 and at most 100, otherwise null. */
+    /** A risk percentage: a number above 0 and at most 100, otherwise null. */
     fun parseCustomRisk(text: String?): BigDecimal? {
         val value = text?.trim()?.replace(',', '.')?.toBigDecimalOrNull() ?: return null
         return value.takeIf { it.signum() > 0 && it <= HUNDRED }
     }
 
-    /** True when [preset] is the percentage the user used last, so the picker can highlight it. */
-    fun isLastUsed(preset: BigDecimal, lastUsed: BigDecimal?): Boolean =
-        lastUsed != null && preset.compareTo(lastUsed) == 0
+    /** A fixed risk amount in account currency: above 0 and at most 1 000 000, otherwise null. */
+    fun parseFixedRisk(text: String?): BigDecimal? {
+        val cleaned = text?.trim()?.replace(" ", "")?.replace(' ', ' ')?.replace(" ", "") ?: return null
+        val value = cleaned.replace(',', '.').toBigDecimalOrNull() ?: return null
+        return value.takeIf { it.signum() > 0 && it <= MAX_FIXED_RISK }
+    }
+
+    /** The setting a percentage or fixed entry stands for. */
+    fun riskSetting(percent: BigDecimal?, fixed: BigDecimal?, fixedMode: Boolean): RiskSetting? =
+        if (fixedMode) fixed?.let(RiskSetting::Fixed) else percent?.let(RiskSetting::Percent)
 
     /** A custom manual balance: a positive number, otherwise null. */
     fun parseManualBalance(text: String?): BigDecimal? {
-        val cleaned = text?.trim()?.replace(" ", "")?.replace(' ', ' ')?.replace(" ", "") ?: return null
+        val cleaned = text?.trim()?.replace(" ", "")?.replace(' ', ' ')?.replace(" ", "") ?: return null
         val value = cleaned.toBigDecimalOrNull() ?: return null
         return value.takeIf { it.signum() > 0 }
     }
 
-    /** Label for a risk percentage button, for example `1 %` or `0.5 %`. */
+    /** A prop-firm starting balance: a positive, sane amount, otherwise null. */
+    fun parsePropFirmStart(text: String?): BigDecimal? = parsePropFirmAmount(text)
+
+    /** A prop-firm maximum drawdown: a positive, sane amount, otherwise null. */
+    fun parsePropFirmDrawdown(text: String?): BigDecimal? = parsePropFirmAmount(text)
+
+    private fun parsePropFirmAmount(text: String?): BigDecimal? {
+        val cleaned = text?.trim()?.replace(" ", "") ?: return null
+        val value = cleaned.replace(',', '.').toBigDecimalOrNull() ?: return null
+        return value.takeIf { it.signum() > 0 && it <= MAX_PROP_FIRM_AMOUNT }
+    }
+
+    /** The prop-firm numbers both at once, or null while either is invalid or the pair is impossible. */
+    fun propFirm(startText: String?, drawdownText: String?): PropFirm? {
+        val start = parsePropFirmStart(startText) ?: return null
+        val drawdown = parsePropFirmDrawdown(drawdownText) ?: return null
+        if (drawdown >= start) return null
+        return PropFirm(start, drawdown)
+    }
+
+    /** The amount the risk percentage would apply to, with its kind; null without a balance. */
+    fun basePreview(balance: BigDecimal?, basis: RiskBasisKind, propFirm: PropFirm?): SizingBase? =
+        balance?.let { RiskBasis.resolve(it, basis, propFirm) }
+
+    /** The money a pass would risk: the fixed amount, or the percentage of the base. */
+    fun previewRisk(
+        percent: BigDecimal?,
+        fixed: BigDecimal?,
+        fixedMode: Boolean,
+        base: BigDecimal?,
+    ): BigDecimal? =
+        if (fixedMode) {
+            fixed
+        } else {
+            base?.let { value -> percent?.let { RiskEngine.riskBudget(value, it) } }
+        }
+
+    /** Label for the bubble, for example `1%` or `0.5%`. */
     fun label(percent: BigDecimal): String = percent.stripTrailingZeros().toPlainString() + " %"
 }

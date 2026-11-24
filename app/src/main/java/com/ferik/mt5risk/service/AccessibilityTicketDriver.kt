@@ -62,12 +62,14 @@ class AccessibilityTicketDriver(
         return waitUntil { read() is TicketReading.Collapsed }
     }
 
-    override suspend fun setVolume(text: String): Boolean {
+    override suspend fun setVolume(text: String): Boolean = setField(Mt5Ids.VOLUME_INPUT, text)
+
+    private suspend fun setField(id: String, text: String): Boolean {
         val root = mt5Root() ?: return false
-        val field = root.findFirst(Mt5Ids.VOLUME_INPUT) as? AccessibilityUiNode ?: return false
+        val field = root.findFirst(id) as? AccessibilityUiNode ?: return false
         if (OrderControlGuard.isForbiddenTarget(root, field)) return false
         val accepted = setText(field.info, text)
-        delay(SETTLE_MILLIS) // let MT5 recompute margin and loss before the next read
+        delay(SETTLE_MILLIS) // let MT5 recompute margin, loss and profit before the next read
         return accepted
     }
 

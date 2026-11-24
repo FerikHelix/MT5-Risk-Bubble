@@ -1,8 +1,11 @@
 package com.ferik.mt5risk.pass
 
+import com.ferik.mt5risk.core.BasisSelection
 import com.ferik.mt5risk.core.Preconditions
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskBasis
 import com.ferik.mt5risk.core.RiskEngine
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.SizingRequest
 import com.ferik.mt5risk.core.VerifyDecision
 import com.ferik.mt5risk.core.VerifyLoop
@@ -33,6 +36,7 @@ class PassRunner(
     private val driver: TicketDriver,
     private val balance: suspend () -> BigDecimal?,
     private val ruleFor: suspend (String) -> VolumeRule?,
+    private val basis: suspend () -> BasisSelection = { BasisSelection() },
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
 ) {
     private val mutex = Mutex()
@@ -40,19 +44,19 @@ class PassRunner(
     val isRunning: Boolean get() = mutex.isLocked
 
     /** Runs a pass, or returns null without doing anything when one is already running. */
-    suspend fun runIfIdle(riskPercent: BigDecimal): PassResult? {
+    suspend fun runIfIdle(risk: RiskSetting): PassResult? {
         if (!mutex.tryLock()) return null
         try {
-            return execute(riskPercent)
+            return execute(risk)
         } finally {
             mutex.unlock()
         }
     }
 
-    private suspend fun execute(riskPercent: BigDecimal): PassResult {
+    private suspend fun execute(risk: RiskSetting): PassResult {
         var expandedBySystem = false
         val outcome = try {
-            withTimeout(timeoutMillis) { runPass(riskPercent) { expandedBySystem = true } }
+            withTimeout(timeoutMillis) { runPass(risk) { expandedBySystem = true } }
         } catch (timeout: TimeoutCancellationException) {
             PassOutcome.Failed("Timed out waiting for the order ticket")
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -69,7 +73,7 @@ class PassRunner(
         runCatching { driver.collapse() }.getOrDefault(false)
     }
 
-    private suspend fun runPass(riskPercent: BigDecimal, onExpanding: () -> Unit): PassOutcome {
+    private suspend fun runPass(risk: RiskSetting, onExpanding: () -> Unit): PassOutcome {
         val first = driver.read()
         val symbol = when (first) {
             TicketReading.NotTicket -> return PassOutcome.Refused(Refusal.TicketNotOpen)
@@ -80,7 +84,7 @@ class PassRunner(
 
         // Symbol, rule and risk are known without opening the sheet, so refuse before touching it.
         val rule = symbol?.let { ruleFor(it) }
-        Preconditions.beforeExpand(riskPercent, symbol, rule)?.let { return PassOutcome.Refused(it) }
+        Preconditions.beforeExpand(risk, symbol, rule)?.let { return PassOutcome.Refused(it) }
         val knownSymbol = symbol!!
         val knownRule = rule!!
 
@@ -108,10 +112,15 @@ class PassRunner(
         )?.let { return PassOutcome.Refused(it) }
 
         val accountBalance = savedBalance!!
+        // The balance above stays a trust check; the budget's base may be the drawdown buffer instead.
+        val selection = basis()
+        val base = RiskBasis.resolve(accountBalance, selection.kind, selection.propFirm)
+        if (base.isExhausted) return PassOutcome.Refused(Refusal.DrawdownExhausted)
+
         val sizing = RiskEngine.size(
             SizingRequest(
                 balance = accountBalance,
-                riskPercent = riskPercent,
+                riskBudget = risk.budget(base.value),
                 currentVolume = ticket.volume,
                 slLoss = ticket.slLoss!!.value.abs(),
                 rule = knownRule,
@@ -145,8 +154,9 @@ class PassRunner(
                 symbol = knownSymbol,
                 volume = volume,
                 volumeText = knownRule.format(volume),
-                riskPercent = riskPercent,
-                balance = accountBalance,
+                riskSetting = risk,
+                base = base.value,
+                baseKind = base.kind,
                 observedLoss = loss.abs(),
                 currency = ticket.currency,
                 clamp = sizing.clamp,

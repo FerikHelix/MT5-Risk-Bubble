@@ -24,6 +24,9 @@ class FakeMt5(
     var expanded: Boolean = false,
     var volume: BigDecimal = BigDecimal("0.01"),
     var slPrice: BigDecimal = BigDecimal("209.932"),
+    /** The prices MT5 shows for the ticket. */
+    var bid: BigDecimal? = BigDecimal("210.000"),
+    var ask: BigDecimal? = BigDecimal("210.050"),
     /** Loss for 1.00 lot at each successive ticket read; the last value repeats. */
     private val lossPerLot: List<String> = listOf("149"),
     private val currency: String? = "USD",
@@ -37,6 +40,7 @@ class FakeMt5(
     var collapseWorks: Boolean = true,
     var setVolumeWorks: Boolean = true,
     var present: Boolean = true,
+    var isPending: Boolean = false,
     /** Sign of the loss label: -1 for a normal loss, +1 for a stop-loss on the wrong side. */
     var lossSign: Int = -1,
 ) : TicketDriver {
@@ -61,9 +65,9 @@ class FakeMt5(
             slLoss = if (hasStop) Amount(loss.multiply(BigDecimal(lossSign)), currency) else null,
             freeMargin = Amount(freeMargin, currency),
             margin = null,
-            bid = null,
-            ask = null,
-            isPending = false,
+            bid = bid,
+            ask = ask,
+            isPending = isPending,
         )
     }
 

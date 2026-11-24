@@ -1,12 +1,14 @@
 package com.ferik.mt5risk.ui
 
+import com.ferik.mt5risk.core.PropFirm
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.SymbolVolumeRules
 import com.ferik.mt5risk.mt5.Fixtures
 import com.ferik.mt5risk.mt5.TicketReader
 import com.ferik.mt5risk.mt5.TicketReading
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -72,15 +74,10 @@ class PickerLogicTest {
         assertEquals(PickerStep.Unavailable("Couldn't read the order ticket (sl_input)"), result)
     }
 
-    // --- risk percentages ---------------------------------------------------------------------
+    // --- risk entry ---------------------------------------------------------------------------
 
     @Test
-    fun theThreePresetsAreHalfOneAndTwoPercent() {
-        assertEquals(listOf("0.5", "1", "2"), PickerLogic.RISK_PRESETS.map { it.toPlainString() })
-    }
-
-    @Test
-    fun aCustomRiskMustBeAboveZeroAndAtMostOneHundred() {
+    fun aRiskMustBeAboveZeroAndAtMostOneHundred() {
         assertEquals(0, d("0.75").compareTo(PickerLogic.parseCustomRisk("0.75")!!))
         assertEquals(0, d("100").compareTo(PickerLogic.parseCustomRisk("100")!!))
         assertEquals(0, d("1.5").compareTo(PickerLogic.parseCustomRisk(" 1,5 ")!!))
@@ -93,18 +90,81 @@ class PickerLogicTest {
     }
 
     @Test
-    fun theLastUsedPercentageIsHighlightedWhateverItsFormatting() {
-        assertTrue(PickerLogic.isLastUsed(d("1"), d("1.00")))
-        assertTrue(PickerLogic.isLastUsed(d("0.5"), d("0.50")))
-        assertFalse(PickerLogic.isLastUsed(d("2"), d("1")))
-        assertFalse(PickerLogic.isLastUsed(d("1"), null))
-    }
-
-    @Test
     fun percentageLabelsDropTrailingZeros() {
         assertEquals("1 %", PickerLogic.label(d("1.00")))
         assertEquals("0.5 %", PickerLogic.label(d("0.50")))
         assertEquals("0.75 %", PickerLogic.label(d("0.75")))
+    }
+
+    @Test
+    fun aFixedRiskAmountMustBePositiveAndBounded() {
+        assertEquals(0, d("60").compareTo(PickerLogic.parseFixedRisk("60")!!))
+        assertEquals(0, d("60.50").compareTo(PickerLogic.parseFixedRisk(" 60,50 ")!!))
+        assertNull(PickerLogic.parseFixedRisk("0"))
+        assertNull(PickerLogic.parseFixedRisk("-5"))
+        assertNull(PickerLogic.parseFixedRisk("1000001"))
+        assertNull(PickerLogic.parseFixedRisk("abc"))
+        assertNull(PickerLogic.parseFixedRisk(null))
+    }
+
+    @Test
+    fun theStagedRiskFollowsTheSelectedUnit() {
+        assertEquals(
+            RiskSetting.Percent(d("1")),
+            PickerLogic.riskSetting(percent = d("1"), fixed = d("60"), fixedMode = false),
+        )
+        assertEquals(
+            RiskSetting.Fixed(d("60")),
+            PickerLogic.riskSetting(percent = d("1"), fixed = d("60"), fixedMode = true),
+        )
+        assertNull(PickerLogic.riskSetting(percent = null, fixed = d("60"), fixedMode = false))
+        assertNull(PickerLogic.riskSetting(percent = d("1"), fixed = null, fixedMode = true))
+    }
+
+    // --- prop-firm numbers and the basis ------------------------------------------------------
+
+    @Test
+    fun propFirmNumbersMustBePositiveAndTheDrawdownMustBeBelowTheStart() {
+        val propFirm = PickerLogic.propFirm("10000", "500")!!
+        assertEquals(0, d("10000").compareTo(propFirm.startBalance))
+        assertEquals(0, d("500").compareTo(propFirm.maxDrawdown))
+
+        assertNull(PickerLogic.propFirm("0", "500"))
+        assertNull(PickerLogic.propFirm("10000", "0"))
+        assertNull(PickerLogic.propFirm("-10000", "500"))
+        assertNull("drawdown must be below the start", PickerLogic.propFirm("10000", "10000"))
+        assertNull(PickerLogic.propFirm("", "500"))
+        assertNull(PickerLogic.propFirm("10000", null))
+        assertNull(PickerLogic.propFirm("abc", "def"))
+    }
+
+    @Test
+    fun aThousandsSpaceIsAcceptedInPropFirmNumbers() {
+        assertEquals(0, d("10000").compareTo(PickerLogic.parsePropFirmStart("10 000")!!))
+        assertEquals(0, d("500.50").compareTo(PickerLogic.parsePropFirmDrawdown(" 500,50 ")!!))
+    }
+
+    @Test
+    fun theBaseIsTheBalanceOrTheDrawdownBuffer() {
+        val propFirm = PropFirm(d("10000"), d("500"))
+
+        val balance = PickerLogic.basePreview(d("9600"), RiskBasisKind.BALANCE, propFirm)!!
+        assertEquals(0, d("9600").compareTo(balance.value))
+        assertEquals(RiskBasisKind.BALANCE, balance.kind)
+
+        val buffer = PickerLogic.basePreview(d("9600"), RiskBasisKind.DRAWDOWN, propFirm)!!
+        assertEquals(0, d("100").compareTo(buffer.value))
+        assertEquals(RiskBasisKind.DRAWDOWN, buffer.kind)
+
+        assertNull("no balance, no base", PickerLogic.basePreview(null, RiskBasisKind.BALANCE, propFirm))
+    }
+
+    @Test
+    fun thePreviewIsTheMoneyAtRisk() {
+        assertEquals(0, d("50").compareTo(PickerLogic.previewRisk(d("1"), null, fixedMode = false, base = d("5000"))!!))
+        assertEquals(0, d("60").compareTo(PickerLogic.previewRisk(d("1"), d("60"), fixedMode = true, base = d("5000"))!!))
+        assertNull(PickerLogic.previewRisk(null, null, fixedMode = false, base = d("5000")))
+        assertNull(PickerLogic.previewRisk(d("1"), null, fixedMode = false, base = null))
     }
 
     // --- manual balance -----------------------------------------------------------------------
@@ -113,7 +173,7 @@ class PickerLogicTest {
     fun aManualBalanceIsAPositiveNumberWithOrWithoutThousandsSpaces() {
         assertEquals(0, d("5000").compareTo(PickerLogic.parseManualBalance("5000")!!))
         assertEquals(0, d("5000.50").compareTo(PickerLogic.parseManualBalance("5 000.50")!!))
-        assertEquals(0, d("4506.77").compareTo(PickerLogic.parseManualBalance("4 506.77")!!))
+        assertEquals(0, d("4506.77").compareTo(PickerLogic.parseManualBalance("4 506.77")!!))
         assertNull(PickerLogic.parseManualBalance("0"))
         assertNull(PickerLogic.parseManualBalance("-5"))
         assertNull(PickerLogic.parseManualBalance("abc"))

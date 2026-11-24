@@ -15,11 +15,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import com.ferik.mt5risk.AppGraph
 import com.ferik.mt5risk.balance.BalanceDisplay
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskMode
+import com.ferik.mt5risk.core.RiskSetting
+import com.ferik.mt5risk.mt5.snapshotOrNull
 import com.ferik.mt5risk.pass.MessageSeverity
 import com.ferik.mt5risk.pass.OutcomeMessage
 import com.ferik.mt5risk.ui.BubblePosition
 import com.ferik.mt5risk.ui.PickerLogic
 import com.ferik.mt5risk.ui.PickerStep
+import com.ferik.mt5risk.ui.SlChangeDetector
 import java.math.BigDecimal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,11 +57,33 @@ class OverlayController(private val context: Context) {
     private val pickerState = mutableStateOf<PickerUi?>(null)
     private val toastState = mutableStateOf<OutcomeMessage?>(null)
 
+    // Settings mirrored from UiPrefs so the foreground poll never has to suspend on DataStore.
+    private var autoApply = true
+    private var percentRisk: BigDecimal? = null
+    private var fixedRisk: BigDecimal? = null
+    private var riskMode = RiskMode.PERCENT
+    private val slDetector = SlChangeDetector()
+
+    private val savedRisk: RiskSetting?
+        get() = if (riskMode == RiskMode.FIXED) {
+            fixedRisk?.let(RiskSetting::Fixed)
+        } else {
+            percentRisk?.let(RiskSetting::Percent)
+        }
+
     fun start() {
         owner.resume()
         scope.launch {
             addBubble()
-            launch { AppGraph.uiPrefs.lastRisk.collect { bubbleLabel.value = it?.let(PickerLogic::label)?.replace(" ", "") ?: "%" } }
+            launch {
+                AppGraph.uiPrefs.lastRisk.collect {
+                    percentRisk = it
+                    bubbleLabel.value = it?.let(PickerLogic::label)?.replace(" ", "") ?: "%"
+                }
+            }
+            launch { AppGraph.uiPrefs.autoApply.collect { autoApply = it } }
+            launch { AppGraph.uiPrefs.riskMode.collect { riskMode = it } }
+            launch { AppGraph.uiPrefs.fixedRisk.collect { fixedRisk = it } }
             launch { AppGraph.messages.collect { showToast(it) } }
             pollJob = launch { followForeground() }
         }
@@ -125,10 +152,28 @@ class OverlayController(private val context: Context) {
 
     private suspend fun followForeground() {
         while (true) {
-            val visible = pickerView != null || AppGraph.isMt5Foreground()
+            val mt5Foreground = AppGraph.isMt5Foreground()
+            val visible = pickerView != null || mt5Foreground
             bubbleView?.visibility = if (visible) View.VISIBLE else View.GONE
+            if (mt5Foreground && pickerView == null) maybeAutoApply()
             delay(FOREGROUND_POLL_MS)
         }
+    }
+
+    /**
+     * Reads the stop-loss only when an automatic pass could actually run, then lets [slDetector]
+     * decide whether the move has settled. The picker and a running pass both stand it down.
+     */
+    private suspend fun maybeAutoApply() {
+        val risk = savedRisk
+        if (!autoApply || risk == null || AppGraph.isPassRunning) return
+        val snapshot = AppGraph.readTicket()?.snapshotOrNull() ?: return
+        AppGraph.lastCurrency = snapshot.currency ?: AppGraph.lastCurrency
+        if (!slDetector.observe(snapshot.symbol, snapshot.slPrice, System.currentTimeMillis())) return
+
+        AppGraph.runPass(risk)
+        // Re-seed from what the pass left behind so its own read cannot look like another move.
+        AppGraph.readTicket()?.snapshotOrNull()?.let { slDetector.seed(it.symbol, it.slPrice) }
     }
 
     // --- picker -----------------------------------------------------------------------------
@@ -152,9 +197,16 @@ class OverlayController(private val context: Context) {
             ?: "No balance yet - open the Trade tab once, or set it manually"
         return PickerUi.ChooseRisk(
             symbol = symbol,
+            balance = cached?.value,
+            currency = AppGraph.lastCurrency ?: cached?.currency,
             balanceLabel = label,
             balanceIsManual = cached?.source == com.ferik.mt5risk.balance.BalanceSource.MANUAL,
             lastUsed = AppGraph.uiPrefs.lastRiskNow(),
+            autoApply = AppGraph.uiPrefs.autoApplyNow(),
+            riskMode = AppGraph.uiPrefs.riskModeNow(),
+            fixedRisk = AppGraph.uiPrefs.fixedRiskNow(),
+            basis = AppGraph.uiPrefs.riskBasisNow(),
+            propFirm = AppGraph.uiPrefs.propFirmNow(),
         )
     }
 
@@ -172,9 +224,14 @@ class OverlayController(private val context: Context) {
                 PickerContent(
                     state = state,
                     onMinLot = { min -> saveMinLot(state, min) },
-                    onRisk = ::runRisk,
+                    onApply = ::runRisk,
                     onManualBalance = { value -> scope.launch { setManualBalance(state, value) } },
                     onClearManualBalance = { scope.launch { clearManualBalance(state) } },
+                    onAutoApply = { enabled -> scope.launch { setAutoApply(state, enabled) } },
+                    onRiskMode = { mode -> scope.launch { setRiskMode(state, mode) } },
+                    onBasis = { kind -> scope.launch { setRiskBasis(state, kind) } },
+                    onPropFirm = { start, drawdown -> scope.launch { setPropFirm(state, start, drawdown) } },
+                    onEdit = ::restartPickerTimeout,
                     onDismiss = ::closePicker,
                 )
             }
@@ -239,12 +296,43 @@ class OverlayController(private val context: Context) {
         restartPickerTimeout()
     }
 
-    private fun runRisk(percent: BigDecimal) {
+    private suspend fun setAutoApply(state: PickerUi, enabled: Boolean) {
+        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+        AppGraph.uiPrefs.setAutoApply(enabled)
+        pickerState.value = chooseRisk(symbol)
+        restartPickerTimeout()
+    }
+
+    private suspend fun setRiskMode(state: PickerUi, mode: RiskMode) {
+        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+        AppGraph.uiPrefs.setRiskMode(mode)
+        pickerState.value = chooseRisk(symbol)
+        restartPickerTimeout()
+    }
+
+    private suspend fun setRiskBasis(state: PickerUi, kind: RiskBasisKind) {
+        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+        AppGraph.uiPrefs.setRiskBasis(kind)
+        pickerState.value = chooseRisk(symbol)
+        restartPickerTimeout()
+    }
+
+    private suspend fun setPropFirm(state: PickerUi, start: BigDecimal, drawdown: BigDecimal) {
+        val symbol = (state as? PickerUi.ChooseRisk)?.symbol ?: return
+        AppGraph.uiPrefs.setPropFirm(start, drawdown)
+        AppGraph.uiPrefs.setRiskBasis(RiskBasisKind.DRAWDOWN)
+        pickerState.value = chooseRisk(symbol)
+        restartPickerTimeout()
+    }
+
+    private fun runRisk(risk: RiskSetting) {
         closePicker()
         // Let the picker window leave first, so MetaTrader 5 is the window the pass reads.
         scope.launch {
             delay(PICKER_CLOSE_SETTLE_MS)
-            AppGraph.runPass(percent)
+            AppGraph.runPass(risk)
+            // Seed from the pass's ticket so auto-apply does not treat the resize as an SL move.
+            AppGraph.readTicket()?.snapshotOrNull()?.let { slDetector.seed(it.symbol, it.slPrice) }
         }
     }
 
@@ -256,6 +344,10 @@ class OverlayController(private val context: Context) {
         remove(pickerView)
         pickerView = null
         pickerState.value = null
+        // Anything the user did while the picker was open becomes the new baseline, not a move.
+        scope.launch {
+            AppGraph.readTicket()?.snapshotOrNull()?.let { slDetector.seed(it.symbol, it.slPrice) }
+        }
     }
 
     // --- toast ------------------------------------------------------------------------------

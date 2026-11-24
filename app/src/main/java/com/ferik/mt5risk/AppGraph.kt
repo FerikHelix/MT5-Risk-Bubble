@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
 import com.ferik.mt5risk.balance.BalanceStore
 import com.ferik.mt5risk.balance.BalanceWatcher
+import com.ferik.mt5risk.core.BasisSelection
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.mt5.TicketDriver
 import com.ferik.mt5risk.pass.MessageSeverity
 import com.ferik.mt5risk.pass.OutcomeMessage
@@ -63,11 +65,18 @@ object AppGraph {
     val isAccessibilityConnected: Boolean get() = accessibility != null
 
     fun attach(handle: AccessibilityHandle) {
+        android.util.Log.i("Mt5Risk", "AppGraph.attach $handle")
         accessibility = handle
         runner = PassRunner(
             driver = handle.driver,
             balance = { balanceStore.current()?.value },
             ruleFor = { symbol -> ruleStore.current().ruleFor(symbol) },
+            basis = {
+                BasisSelection(
+                    kind = uiPrefs.riskBasisNow(),
+                    propFirm = uiPrefs.propFirmNow(),
+                )
+            },
         )
     }
 
@@ -80,6 +89,9 @@ object AppGraph {
 
     fun isMt5Foreground(): Boolean = accessibility?.isMt5Foreground() == true
 
+    /** True while a pass is running, so auto-apply can stand down. */
+    val isPassRunning: Boolean get() = runner?.isRunning == true
+
     /** The driver's current reading, for the picker to learn the symbol before it asks anything. */
     suspend fun readTicket() = accessibility?.driver?.read()
 
@@ -87,7 +99,7 @@ object AppGraph {
      * Runs one pass and publishes its message. Returns null when a pass is already running (the tap
      * is ignored) or the accessibility service is not connected (the user is told).
      */
-    suspend fun runPass(riskPercent: BigDecimal): PassResult? {
+    suspend fun runPass(risk: RiskSetting): PassResult? {
         val current = runner
         if (current == null) {
             _messages.emit(
@@ -98,8 +110,11 @@ object AppGraph {
             )
             return null
         }
-        uiPrefs.setLastRisk(riskPercent)
-        val result = current.runIfIdle(riskPercent) ?: return null
+        when (risk) {
+            is RiskSetting.Percent -> uiPrefs.setLastRisk(risk.value)
+            is RiskSetting.Fixed -> uiPrefs.setFixedRisk(risk.amount)
+        }
+        val result = current.runIfIdle(risk) ?: return null
         (result.outcome as? PassOutcome.Success)?.currency?.let { lastCurrency = it }
         _messages.emit(OutcomeMessage.of(result))
         return result

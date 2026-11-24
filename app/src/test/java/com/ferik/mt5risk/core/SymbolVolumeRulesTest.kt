@@ -18,7 +18,9 @@ class SymbolVolumeRulesTest {
 
     private fun size(rules: SymbolVolumeRules, symbol: String, volume: String, loss: String): SizingResult {
         val rule = rules.ruleFor(symbol)!!
-        return RiskEngine.size(SizingRequest(d("5000"), d("1"), d(volume), d(loss), rule))
+        val balance = d("5000")
+        val budget = RiskEngine.riskBudget(balance, d("1"))
+        return RiskEngine.size(SizingRequest(balance, budget, d(volume), d(loss), rule))
     }
 
     @Test
@@ -88,14 +90,14 @@ class SymbolVolumeRulesTest {
         assertNull(rules.ruleFor("XAUUSD"))
         assertFalse(rules.isKnown("XAUUSD"))
 
-        val refusal = Preconditions.beforeExpand(d("1"), "XAUUSD", rules.ruleFor("XAUUSD"))
+        val refusal = Preconditions.beforeExpand(RiskSetting.Percent(d("1")), "XAUUSD", rules.ruleFor("XAUUSD"))
         assertEquals(Refusal.NoVolumeRule("XAUUSD"), refusal)
     }
 
     @Test
     fun knownSymbolPassesThePreExpandCheck() {
         val rules = rulesWithForexAndIndex()
-        assertNull(Preconditions.beforeExpand(d("1"), "SP500", rules.ruleFor("SP500")))
+        assertNull(Preconditions.beforeExpand(RiskSetting.Percent(d("1")), "SP500", rules.ruleFor("SP500")))
     }
 
     @Test

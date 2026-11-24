@@ -28,9 +28,15 @@ class RiskAccessibilityService : AccessibilityService(), AppGraph.AccessibilityH
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        android.util.Log.i("Mt5Risk", "accessibility onServiceConnected")
         val connected = AccessibilityTicketDriver(this)
         ticketDriver = connected
         AppGraph.attach(this)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        android.util.Log.i("Mt5Risk", "accessibility onCreate")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -60,11 +66,13 @@ class RiskAccessibilityService : AccessibilityService(), AppGraph.AccessibilityH
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        android.util.Log.i("Mt5Risk", "accessibility onUnbind")
         AppGraph.detach(this)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        android.util.Log.i("Mt5Risk", "accessibility onDestroy")
         AppGraph.detach(this)
         scope.cancel()
         super.onDestroy()

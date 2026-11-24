@@ -1,6 +1,10 @@
 package com.ferik.mt5risk.pass
 
+import com.ferik.mt5risk.core.BasisSelection
+import com.ferik.mt5risk.core.PropFirm
 import com.ferik.mt5risk.core.Refusal
+import com.ferik.mt5risk.core.RiskBasisKind
+import com.ferik.mt5risk.core.RiskSetting
 import com.ferik.mt5risk.core.VolumeClamp
 import com.ferik.mt5risk.core.VolumeRule
 import java.math.BigDecimal
@@ -32,15 +36,21 @@ class PassRunnerTest {
         mt5: FakeMt5,
         balance: String? = "5000",
         rules: Map<String, VolumeRule> = mapOf("GBPJPY" to forex),
+        basis: BasisSelection = BasisSelection(),
         timeoutMillis: Long = 20_000L,
     ) = PassRunner(
         driver = mt5,
         balance = { balance?.let(::d) },
         ruleFor = { rules[it] },
+        basis = { basis },
         timeoutMillis = timeoutMillis,
     )
 
-    private suspend fun PassRunner.pass(percent: BigDecimal = one): PassResult = runIfIdle(percent)!!
+    private suspend fun PassRunner.pass(percent: BigDecimal = one): PassResult =
+        runIfIdle(RiskSetting.Percent(percent))!!
+
+    private suspend fun PassRunner.passFixed(amount: BigDecimal): PassResult =
+        runIfIdle(RiskSetting.Fixed(amount))!!
 
     // ============================================================================================
     // Direct mode: the fields behind the collapsed strip are read and written, the sheet never moves
@@ -60,6 +70,59 @@ class PassRunnerTest {
         assertEquals("only a write, no expand and no collapse", listOf("write:0.33"), mt5.events)
         assertFalse(mt5.expanded)
         assertFalse(result.collapseFailed)
+    }
+
+    @Test
+    fun aFixedRiskBudgetSizesTheLotWithoutUsingBalance() = runTest {
+        // 0.01 lots lose 1.49, so a 60 USD budget asks for 0.01 * 60 / 1.49 = 0.40 lots.
+        val mt5 = FakeMt5()
+        val result = runner(mt5).passFixed(d("60"))
+
+        val outcome = result.outcome as PassOutcome.Success
+        assertEquals("0.40", outcome.volumeText)
+        assertEquals(RiskSetting.Fixed(d("60")), outcome.riskSetting)
+        assertEquals(0, d("60").compareTo(outcome.riskSetting.budget(d("5000"))))
+    }
+
+    @Test
+    fun aDrawdownBasisSizesFromTheBufferAboveTheFloor() = runTest {
+        // 5 000.00 balance, 200.00 drawdown starting from 5 000.00: the base is 200.00, so 1 % = 2.00.
+        val mt5 = FakeMt5()
+        val result = runner(
+            mt5,
+            basis = BasisSelection(RiskBasisKind.DRAWDOWN, PropFirm(d("5000"), d("200"))),
+        ).pass()
+
+        val outcome = result.outcome as PassOutcome.Success
+        assertEquals(0, d("200").compareTo(outcome.base))
+        assertEquals(RiskBasisKind.DRAWDOWN, outcome.baseKind)
+        assertEquals("0.01", outcome.volumeText)
+        assertEquals(listOf("write:0.01"), mt5.events)
+    }
+
+    @Test
+    fun anExhaustedDrawdownFloorRefusesWithoutWriting() = runTest {
+        // The floor is 4 800.00 and the balance already sits on it.
+        val mt5 = FakeMt5(freeMargin = d("4000"))
+        val result = runner(
+            mt5,
+            balance = "4800",
+            basis = BasisSelection(RiskBasisKind.DRAWDOWN, PropFirm(d("5000"), d("200"))),
+        ).pass()
+
+        assertEquals(PassOutcome.Refused(Refusal.DrawdownExhausted), result.outcome)
+        assertTrue(mt5.events.isEmpty())
+    }
+
+    @Test
+    fun theBalanceStaysATrustCheckOnTheDrawdownBasis() = runTest {
+        val result = runner(
+            FakeMt5(),
+            balance = "4000",
+            basis = BasisSelection(RiskBasisKind.DRAWDOWN, PropFirm(d("5000"), d("200"))),
+        ).pass()
+
+        assertEquals(PassOutcome.Refused(Refusal.StaleBalance(d("4000"), d("5000.00"))), result.outcome)
     }
 
     @Test
@@ -294,7 +357,7 @@ class PassRunnerTest {
     @Test
     fun fallbackCancelledMidWayStillCollapsesTheSheet() = runTest {
         val mt5 = noHiddenFields().apply { onSetVolume = { delay(Long.MAX_VALUE) } }
-        val job = launch { runner(mt5).runIfIdle(one) }
+        val job = launch { runner(mt5).runIfIdle(RiskSetting.Percent(one)) }
         runCurrent()
         assertTrue(mt5.expanded)
 
@@ -309,7 +372,7 @@ class PassRunnerTest {
     @Test
     fun directModeCancelledMidWayHasNothingToRestore() = runTest {
         val mt5 = FakeMt5().apply { onSetVolume = { delay(Long.MAX_VALUE) } }
-        val job = launch { runner(mt5).runIfIdle(one) }
+        val job = launch { runner(mt5).runIfIdle(RiskSetting.Percent(one)) }
         runCurrent()
 
         job.cancel()
@@ -329,10 +392,10 @@ class PassRunnerTest {
         val mt5 = FakeMt5().apply { onSetVolume = { gate.await() } }
         val runner = runner(mt5)
 
-        val first = async { runner.runIfIdle(one) }
+        val first = async { runner.runIfIdle(RiskSetting.Percent(one)) }
         runCurrent()
         assertTrue(runner.isRunning)
-        assertNull("second tap does nothing", runner.runIfIdle(one))
+        assertNull("second tap does nothing", runner.runIfIdle(RiskSetting.Percent(one)))
 
         gate.complete(Unit)
         val firstResult = first.await()
@@ -346,8 +409,8 @@ class PassRunnerTest {
     fun aNewPassCanRunOnceTheLastOneFinished() = runTest {
         val mt5 = FakeMt5()
         val runner = runner(mt5)
-        assertNotNull(runner.runIfIdle(one))
-        assertNotNull(runner.runIfIdle(one))
+        assertNotNull(runner.runIfIdle(RiskSetting.Percent(one)))
+        assertNotNull(runner.runIfIdle(RiskSetting.Percent(one)))
         assertEquals(2, mt5.events.count { it.startsWith("write:") })
     }
 
@@ -369,7 +432,7 @@ class PassRunnerTest {
             FakeMt5(hiddenReadable = false, expandWorks = false),
         )
         for (mt5 in scenarios) {
-            runner(mt5).runIfIdle(one)
+            runner(mt5).runIfIdle(RiskSetting.Percent(one))
             assertTrue(
                 "unexpected action in ${mt5.events}",
                 mt5.events.all { it == "expand" || it == "collapse" || it.startsWith("write:") },
@@ -387,7 +450,7 @@ class PassRunnerTest {
             FakeMt5(realStep = d("0.1")),
         )
         for (mt5 in scenarios) {
-            runner(mt5).runIfIdle(one)
+            runner(mt5).runIfIdle(RiskSetting.Percent(one))
             assertTrue("expand/collapse in ${mt5.events}", mt5.events.none { it == "expand" || it == "collapse" })
         }
     }
