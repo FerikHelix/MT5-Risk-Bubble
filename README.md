@@ -1,94 +1,78 @@
 # MT5 Risk Bubble
 
-A floating bubble for **MetaTrader 5 on Android** that sets your lot size from a risk percentage or a fixed amount, and can re-size automatically when you move the stop-loss.
+An Android floating bubble that sets your lot size in **MetaTrader 5** from a risk percentage or a fixed amount.
 
-You put the stop-loss where you want it on the chart, tap the bubble, and enter a risk: a percentage of your balance, a percentage of the drawdown a prop firm allows, or a fixed amount such as 60 USD. The app works out the lot so that MetaTrader 5's **own** stop-loss loss figure is at or just under that risk, and types it into the order ticket's Volume field. You still press Buy or Sell yourself.
+You place the stop-loss on the chart, tap the bubble and enter a risk, such as `1 %` or `60 USD`. The app adjusts the lot until MT5's own stop-loss loss figure is at or just under that amount, then types the lot into the order ticket's Volume field. You still press Buy or Sell yourself.
 
-Built for a sideloaded APK on one phone (Redmi Note 10S, Android 13, MIUI 14) and checked against MetaTrader 5 build **500.6260**. Try it on a demo account first.
+Because MT5 does the loss calculation, the app needs no symbol table. JPY pairs, gold, indices and cent accounts all work the same way, and the loss is already in your account currency.
 
-## What it does
-
-1. You drag the stop-loss line on the chart (or type it) with the order strip showing.
-2. The first time, you tap the bubble and enter a risk. From then on, with **auto-apply** on, moving the stop-loss runs the pass by itself; with it off, **Apply** in the picker runs it.
-3. The app reads the symbol, volume and **stop-loss loss** that MT5 shows, scales the volume (`new = current x budget / loss`), rounds it **down** to the symbol's lot step, writes it, then reads MT5's recomputed loss and corrects downward if the price moved (at most 3 writes).
-4. A message appears over the chart, for example `0.33 lots - loss 49.17 USD (0.98 % of balance)`.
-
-The order ticket's sheet does not move: MetaTrader 5 keeps its fields live behind the collapsed strip, and the app reads and writes them there. Only if those fields cannot be read does it open the sheet, use it, and close it again.
-
-Because MT5 computes the loss, there is no symbol table to maintain: JPY pairs, gold, indices and cent accounts all work the same way, and the loss is already in your account currency.
+It was built and tested on one phone (Redmi Note 10S, Android 13, MIUI 14) with MT5 build 500.6260. Try it on a demo account first.
 
 ## What it never does
 
-- It never presses **Buy, Sell or Place**, never toggles one-click trading, and never opens, changes or closes an order. The only field it changes is **Volume**.
-- It reads only the MetaTrader 5 window. It does not use the internet and declares no network permission.
-- It writes nothing, and says why, when there is no stop-loss, the stop-loss is on the wrong side, no balance is known, the balance looks stale, the ticket is not in Lots, or the ticket cannot be read.
+- It never presses Buy, Sell or Place, never toggles one-click trading, and never opens, changes or closes an order. The only field it touches is Volume.
+- It reads only the MT5 window. It has no network permission.
+- If something is missing or wrong, it writes nothing and tells you why: no stop-loss, a stop-loss on the wrong side, an unknown or stale balance, a ticket that is not in lots, or a ticket it cannot read.
 
-## Build and install
+## How a sizing pass works
 
-You need Android Studio (the bundled JDK is enough) and the Android SDK.
+1. It reads the symbol, the volume and the stop-loss loss that MT5 shows.
+2. It scales the volume (`new = current x budget / loss`) and rounds it down to the lot step.
+3. It writes the volume, reads MT5's new loss and corrects downward if the price moved. It writes at most 3 times.
+4. It shows the result, for example `0.33 lots - loss 49.17 USD (0.98 % of balance)`.
+
+## Build
+
+You need Android Studio (its bundled JDK is enough) and the Android SDK.
 
 ```
-gradlew.bat assembleDebug          # builds app/build/outputs/apk/debug/app-debug.apk
-gradlew.bat testDebugUnitTest      # the JVM unit tests
+gradlew.bat assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
+gradlew.bat testDebugUnitTest      # unit tests
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Or open the folder in Android Studio and press Run with the phone connected (USB debugging on).
+## Phone setup
 
-## First-time setup on the phone
+Open the app and work down the Setup list.
 
-Open **MT5 Risk Bubble** and go down the Setup list. The first card explains exactly what the app can and cannot do; read it, then tap **I understand**.
-
-| Row | What to do |
+| Permission | What to do |
 |---|---|
-| Draw over other apps | Open settings and switch it on. |
-| Accessibility service | On a sideloaded app Android first blocks this. Tap **Open App info**, open the menu (three dots, top right) and choose **Allow restricted settings**. Then open Accessibility settings, find **MT5 Risk Bubble** under Downloaded apps, and switch it on. |
-| Notifications | Allow. Android keeps the bubble alive only with a visible notification, which also holds the **Stop** button. |
-| Pop-up windows while running in the background (Xiaomi) | In the app's permissions, allow it. The app cannot detect this one, so it shows "Check yourself". |
-| Autostart (Xiaomi) | Switch it on for MT5 Risk Bubble. Also shown as "Check yourself". |
-| Battery: no restrictions | Set battery saver to **No restrictions** for the app. |
+| Draw over other apps | Turn it on. |
+| Accessibility service | Android blocks this for sideloaded apps. Go to App info, open the ⋮ menu, choose **Allow restricted settings**, then turn on **MT5 Risk Bubble** under Accessibility -> Downloaded apps. |
+| Notifications | Allow. The notification keeps the bubble alive and holds the **Stop** button. |
+| Background pop-ups (Xiaomi) | Allow it in the app's permissions. The app can't check this one. |
+| Autostart (Xiaomi) | Turn it on. The app can't check this one either. |
+| Battery | Set it to **No restrictions**. |
 
-When **Draw over other apps** and **Accessibility service** are both Ready, **Start the bubble** becomes available. The bubble appears only while MetaTrader 5 is the app on screen. Drag it anywhere; it remembers its place. **Stop** is in the notification.
+When the overlay and accessibility permissions are ready, tap **Start the bubble**. The bubble shows only while MT5 is on screen.
 
 ## Using it
 
-1. Open the MT5 order ticket on the chart so the strip with **SL / TP** shows at the bottom.
-2. Set the stop-loss.
-3. Tap the bubble, enter a risk and tap **Apply**. The field opens prefilled with the last value and the small **% / USD** control changes the unit. The line under it says exactly what the entry means (`1 % of 4 776.77 = 47.77 USD at risk`), and the summary row at the bottom names the base, what is left and whether auto-apply is on. Tapping that row opens **Setup**.
+Open the order ticket so the SL/TP strip shows, set the stop-loss, tap the bubble, enter a risk and tap **Apply**.
 
-The picker has two pages, so nothing you set once competes with the number you use every trade.
+- **Percent or fixed amount:** the % / USD switch changes the unit. A fixed amount is also reported as a percentage.
+- **Auto-apply:** when it is on, moving the stop-loss re-sizes the lot after about 0.7 s without further changes. It is set in **Setup**.
+- **Prop-firm drawdown:** in Setup, choose **Drawdown** and enter the starting balance and the maximum drawdown. The percentage is then taken from what is left above the floor (`start - max drawdown`). When the floor is reached, sizing stops.
+- **New symbol:** the first time you use a symbol, the app asks for its minimum lot (0.01, 0.1, 1 or a custom value) and remembers it. You can edit these under **Minimum lots**.
+- **Balance:** MT5 shows the balance only on the Trade tab, so the app saves it whenever you open that tab and shows how old it is. You can also type it in Setup.
 
-**Setup** holds what a challenge changes rarely: the **base** (Balance or Drawdown, with the prop-firm numbers and their **Edit**), the **balance** override, and the **auto-apply** switch. It never has an Apply button, so a settings change cannot place a trade; **Back to risk** returns to the field.
+## Limits
 
-**Auto-apply.** While it is on and a risk is already saved, dragging the stop-loss re-sizes the lot after the value settles (about 0.7 s of quiet). Moving the stop-loss several times quickly still produces one pass. It pauses while the picker is open or another pass is running. Turn it off if you only want a pass when you tap **Apply**. The setting is remembered across restarts.
+- The loss uses the live price. In a fast market with a tight stop, the app may report "still over budget after 3 tries" instead of claiming success.
+- The drawdown uses balance, not equity, so open losses are not counted. The drawdown limits are static, so trailing drawdown and daily loss limits are not tracked.
+- Only the Price and Pips stop-loss modes have been tested.
+- A future MT5 update could change the screen IDs, which are all in `Mt5Ids.kt`. If the app can't read the ticket, it refuses instead of guessing.
 
-**Fixed risk.** Switch to **USD** and type an amount (for example `60`) to risk that many units of the account currency instead of a percentage. The result message shows both the amount and what it worked out to as a percentage, so a fixed risk is never reported as a percentage you did not choose.
-
-**Prop-firm drawdown.** Open **Setup** and choose **Drawdown**, then enter your **starting balance** and **maximum drawdown** once; **Edit** beside the saved floor changes them. The floor is `starting balance - maximum drawdown`, and the percentage then applies to what is still above that floor, capped at the maximum drawdown so profit never raises the money at risk. At the start of a 10 000 challenge with a 500 drawdown, 1 % risks 5.00; after losing 400 it risks 1.00, because only 100 is left before the floor. The result message says `% of drawdown left`. A fixed amount above the buffer is allowed but flagged, and when the floor is reached **Apply** is disabled and any automatic pass is refused.
-
-**The first time you use a symbol** the picker opens a **New symbol** page asking for its **minimum lot** (0.01, 0.1, 1 or your own). Forex is usually 0.01; stocks and indices often 0.1. The lot then moves in steps of that size, and the answer is remembered per symbol (names match exactly, so `GBPJPY` and `GBPJPY.pc` each ask once). Change or delete these under **Minimum lots**. The maximum lot defaults to 100.
-
-**Balance.** MT5 shows your balance only on the **Trade** tab, so the app remembers it each time you open that tab, and the picker shows it with its age (`Balance 5 000.00 USD, seen 3 min ago`). Open the Trade tab again after your balance changes. You can also type a balance under **Setup -> Change**. If the remembered balance is lower than your free margin it is treated as stale or from another account, and nothing is written.
-
-## Limits worth knowing
-
-- The loss uses the live price, so it moves while you read this sentence. The app reads and writes within about a second and corrects once or twice if needed, but on a tight stop in a fast market it can still report "still over budget after 3 tries". It then tells you the last loss it saw and does not claim success.
-- The lot is sized for the price at the moment you tap. Tap close to when you trade.
-- If MetaTrader 5 stops keeping its ticket in the screen tree (a future update), the app falls back to opening the sheet, and if that fails too it refuses instead of guessing. The MT5 ids live in one file, `Mt5Ids.kt`.
-- The drawdown buffer uses the remembered **balance**, not equity. Floating losses on open trades are not included, so the room shown is optimistic while a position is live.
-- The drawdown numbers are **static**. A trailing drawdown moves the floor up with your peak, and the app does not track peaks, so update the two numbers by hand on those accounts. Daily loss limits are not tracked at all.
-- Only the Price and Pips stop-loss modes have been checked.
-
-## Code map
+## Code layout
 
 ```
-core/       pure Kotlin: amount parsing, risk scaling, drawdown basis, verify loop, preconditions, per-symbol volume rules
-mt5/        reading the MT5 screen, the order-control deny-list, the sheet fallback
-pass/       one lot-sizing pass and the messages shown afterwards
-balance/    remembered balance and its staleness check
-rules/      saved per-symbol minimum lots
-service/    accessibility service and the foreground service that owns the bubble
-ui/         bubble, picker, toast, setup and settings screens
+core/      risk math, drawdown, verify loop, preconditions, lot rules
+mt5/       reading the MT5 screen and the order-control deny-list
+pass/      one sizing pass and its result messages
+balance/   remembered balance and staleness check
+rules/     saved minimum lot per symbol
+service/   accessibility and foreground services
+ui/        bubble, picker, toast and setup screens
 ```
 
-The design and requirements are in `openspec/`; the current change is `openspec/changes/auto-apply-sl-risk-rr/`.
+The specs are in `openspec/`.
